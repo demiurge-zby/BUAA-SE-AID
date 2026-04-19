@@ -212,7 +212,7 @@ class BioBaseDataset(torch.utils.data.Dataset):
             print(self.img_list[index], self.mask_list[index])
             raise ValueError
         img = aug['image']
-        mask = aug['mask'] / 255.0
+        mask = (aug['mask'] > 0).float()
 
         res_dict = easydict.EasyDict({
             "img": img,
