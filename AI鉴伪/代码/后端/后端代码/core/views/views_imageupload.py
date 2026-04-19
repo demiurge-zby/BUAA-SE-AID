@@ -1,4 +1,5 @@
 import io
+import os
 import uuid
 from PIL import Image
 import zipfile
@@ -19,11 +20,68 @@ def upload_file(request):
     if not user.has_permission('upload'):
         return Response({"错误": "该用户没有上传文件的权限"}, status=403)
 
+    detection_type = request.data.get('detection_type', 'image')
+    review_role = request.data.get('review_role', '')
+    linked_paper_file_id = request.data.get('linked_paper_file_id')
+
+    valid_detection_types = {'image', 'paper', 'review'}
+    if detection_type not in valid_detection_types:
+        return Response({'message': 'Invalid detection_type'}, status=400)
+
     # 获取上传的文件
-    uploaded_file = request.FILES['file']
+    uploaded_file = request.FILES.get('file')
+    if uploaded_file is None:
+        return Response({'message': 'file is required'}, status=400)
+
+    file_ext = os.path.splitext(uploaded_file.name)[1].lower()
+    max_size = 100 * 1024 * 1024
+    if uploaded_file.size > max_size:
+        return Response({'message': 'File size exceeds 100MB limit'}, status=400)
+
+    allowed_image_ext = {'.png', '.jpg', '.jpeg', '.zip'}
+    allowed_paper_ext = {'.docx', '.pdf', '.zip'}
+    allowed_review_ext = {'.docx', '.pdf', '.txt', '.zip'}
+
+    linked_paper_file = None
+    if detection_type == 'image':
+        if file_ext not in allowed_image_ext:
+            return Response({'message': 'Unsupported image file format'}, status=400)
+    elif detection_type == 'paper':
+        if file_ext not in allowed_paper_ext:
+            return Response({'message': 'Unsupported paper file format'}, status=400)
+    else:
+        if review_role not in {'paper', 'review'}:
+            return Response({'message': 'review_role must be paper or review'}, status=400)
+
+        if review_role == 'paper':
+            if file_ext not in allowed_paper_ext:
+                return Response({'message': 'Unsupported review-paper file format'}, status=400)
+        else:
+            if file_ext not in allowed_review_ext:
+                return Response({'message': 'Unsupported review file format'}, status=400)
+            if not linked_paper_file_id:
+                return Response({'message': 'Review upload must include linked_paper_file_id'}, status=400)
+
+            try:
+                linked_paper_file = FileManagement.objects.get(id=linked_paper_file_id, user=request.user)
+            except FileManagement.DoesNotExist:
+                return Response({'message': 'Linked paper file not found'}, status=404)
+
+            if linked_paper_file.resource_type != 'review_paper':
+                return Response({'message': 'linked_paper_file_id is not a review paper file'}, status=400)
+
+    if detection_type == 'image':
+        resource_type = 'image'
+    elif detection_type == 'paper':
+        resource_type = 'paper'
+    elif review_role == 'paper':
+        resource_type = 'review_paper'
+    else:
+        resource_type = 'review_file'
+
     file_name = uploaded_file.name
     file_size = uploaded_file.size
-    file_type = uploaded_file.content_type
+    file_type = uploaded_file.content_type or 'application/octet-stream'
 
     # 存储文件到 FileManagement 表
     file_management = FileManagement.objects.create(
@@ -31,7 +89,9 @@ def upload_file(request):
         user=request.user,
         file_name=file_name,
         file_size=file_size,
-        file_type=file_type
+        file_type=file_type,
+        resource_type=resource_type,
+        linked_file=linked_paper_file
     )
 
     # 使用 FileSystemStorage 保存上传文件，路径基于 MEDIA_ROOT 下的 uploads 目录
@@ -39,14 +99,17 @@ def upload_file(request):
     fs = FileSystemStorage()
     file_path = fs.save(f'uploads/{unique_filename}', uploaded_file)
     file_url = fs.url(file_path)
+    file_management.stored_path = file_path
+    file_management.save(update_fields=['stored_path'])
 
-    # 根据文件类型处理
-    if file_type == 'application/pdf':  # 处理PDF文件
-        extract_images_from_pdf(file_management, file_path)
-    elif file_type == 'application/zip' or file_type == 'application/x-zip-compressed' or file_type == 'application/octet-stream':  # 处理ZIP文件
-        extract_images_from_zip(file_management, uploaded_file)
-    else:  # 处理图片文件（png/jpg等）
-        store_image(file_management, uploaded_file)
+    # 仅图像检测任务提取图片
+    if detection_type == 'image':
+        if file_ext == '.pdf':
+            extract_images_from_pdf(file_management, file_path)
+        elif file_ext == '.zip':
+            extract_images_from_zip(file_management, uploaded_file)
+        else:
+            store_image(file_management, uploaded_file)
 
     # 在Log表中记录上传操作
     Log.objects.create(
@@ -59,11 +122,13 @@ def upload_file(request):
     return Response({
         "message": "File uploaded successfully",
         "file_id": file_management.id,
-        "file_url": file_url
+        "file_url": file_url,
+        "detection_type": detection_type,
+        "resource_type": resource_type,
+        "linked_paper_file_id": linked_paper_file.id if linked_paper_file else None
     })
 
 
-import os
 import threading
 from django.conf import settings
 
@@ -245,6 +310,12 @@ def get_extracted_images(request, file_id):
     try:
         # 获取文件对象并验证权限
         file_management = FileManagement.objects.get(id=file_id, user=request.user)
+        if file_management.resource_type != 'image':
+            return Response({
+                "message": "Current file type has no extracted images",
+                "file_id": file_management.id,
+                "resource_type": file_management.resource_type
+            }, status=400)
 
         # 按图片ID倒序排列（可根据需要改为其他字段如上传时间）
         extracted_images = ImageUpload.objects.filter(

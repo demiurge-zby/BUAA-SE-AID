@@ -1,11 +1,12 @@
 import http from './request'
 
 export default {
-  uploadFile(data: any) {
+  uploadFile(data: any, onUploadProgress?: (progressEvent: any) => void) {
     return http.post('/upload/', data, {
       headers: {
         'Content-Type': 'multipart/form-data'
-      }
+      },
+      onUploadProgress,
     })
   },
 

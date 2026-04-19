@@ -61,6 +61,7 @@ urlpatterns = [
     # 图片检测相关的URL
     path('detection/<int:image_id>/', get_detection_result, name='image_detection'),
     path('detection/submit/', submit_detection2, name='submit_detection'),
+    path('resource-task/create/', create_resource_task, name='create_resource_task'),
     path("tasks/<int:task_id>/report/", download_task_report, name="download-task-report"),
     path("tasks_image/<int:image_id>/report/", download_image_report, name="download-image-report"),
     path("tasks_image/<int:image_id>/getdr/", image2dr, name="image2dr"),

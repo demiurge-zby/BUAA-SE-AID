@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.utils import timezone
-from ..models import DetectionResult, ImageUpload, Log, User
+from ..models import DetectionResult, ImageUpload, Log, User, DetectionTask, FileManagement
 from django.db.models import Q
 from datetime import datetime
 from django.core.paginator import Paginator
@@ -168,12 +168,14 @@ def submit_detection2(request):
     detection_task = DetectionTask.objects.create(
         organization=user.organization,
         user=request.user,
+        task_type='image',
         task_name=task_name,  # 使用用户提交的任务名称
         status='pending',  # 初始状态为"排队中"
         cmd_block_size=cmd_block_size,
         urn_k=urn_k,
         if_use_llm=if_use_llm
     )
+    detection_task.resource_files.add(*list({img.file_management for img in image_uploads}))
 
     # 在Log表中记录检测任务的创建
     Log.objects.create(
@@ -266,7 +268,7 @@ from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from ..models import DetectionTask
+
 
 from ..utils.report_generator import generate_detection_task_report
 
@@ -358,7 +360,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from ..models import DetectionTask
+
 from ..utils.serializers_safe import serialize_value
 
 @api_view(["GET"])
@@ -619,6 +621,78 @@ class CustomPagination(PageNumberPagination):
             'tasks': data
         })
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_resource_task(request):
+    user = request.user
+    if not user.has_permission('submit'):
+        return Response({'message': '该用户没有提交检测任务的权限'}, status=403)
+
+    task_type = request.data.get('task_type', '')
+    file_ids = request.data.get('file_ids', [])
+    task_name = request.data.get('task_name', '').strip()
+
+    if task_type not in {'paper', 'review'}:
+        return Response({'message': 'task_type must be paper or review'}, status=400)
+
+    if not isinstance(file_ids, list) or not file_ids:
+        return Response({'message': 'file_ids is required and must be a non-empty list'}, status=400)
+
+    if not task_name:
+        if task_type == 'paper':
+            task_name = f'论文检测-{timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")}'
+        else:
+            task_name = f'Review检测-{timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")}'
+
+    files = FileManagement.objects.filter(id__in=file_ids, user=user)
+    if files.count() != len(set(file_ids)):
+        return Response({'message': 'Some files do not exist or do not belong to current user'}, status=404)
+
+    file_list = list(files)
+    resource_types = {f.resource_type for f in file_list}
+
+    if task_type == 'paper':
+        if resource_types != {'paper'}:
+            return Response({'message': 'paper task only accepts paper resource files'}, status=400)
+    else:
+        if not ({'review_paper', 'review_file'} <= resource_types):
+            return Response({'message': 'review task requires both review_paper and review_file'}, status=400)
+
+        linked_ok = False
+        review_papers = [f for f in file_list if f.resource_type == 'review_paper']
+        review_files = [f for f in file_list if f.resource_type == 'review_file']
+        for rv in review_files:
+            if rv.linked_file and rv.linked_file.id in {rp.id for rp in review_papers}:
+                linked_ok = True
+                break
+        if not linked_ok:
+            return Response({'message': 'review_file is not correctly linked to review_paper'}, status=400)
+
+    detection_task = DetectionTask.objects.create(
+        organization=user.organization,
+        user=user,
+        task_type=task_type,
+        task_name=task_name,
+        status='pending',
+    )
+    detection_task.resource_files.add(*file_list)
+
+    Log.objects.create(
+        user=user,
+        operation_type='detection',
+        related_model='DetectionTask',
+        related_id=detection_task.id,
+    )
+
+    return Response({
+        'message': 'Resource task created successfully',
+        'task_id': detection_task.id,
+        'task_name': detection_task.task_name,
+        'task_type': task_type,
+        'file_ids': [f.id for f in file_list],
+    })
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_tasks(request):
@@ -649,10 +723,12 @@ def get_user_tasks(request):
     task_data = [
         {
             'task_id': task.id,
+            'task_type': task.task_type,
             'task_name': task.task_name,
             'upload_time': timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M:%S'),
             'status': task.status,
-            'completion_time': timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M:%S') if task.completion_time else None
+            'completion_time': timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M:%S') if task.completion_time else None,
+            'resource_file_ids': list(task.resource_files.values_list('id', flat=True))
         } for task in page_obj.object_list
     ]
 

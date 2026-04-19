@@ -253,6 +253,13 @@ class PublisherReviewerRelationship(models.Model):
 
 
 class FileManagement(models.Model):
+    RESOURCE_TYPE_CHOICES = [
+        ('image', 'Image'),
+        ('paper', 'Paper'),
+        ('review_paper', 'ReviewPaper'),
+        ('review_file', 'ReviewFile')
+    ]
+
     TAG_CHOICES = [
         ('Biology', 'Biology'),
         ('Medicine', 'Medicine'),
@@ -266,6 +273,9 @@ class FileManagement(models.Model):
     file_name = models.CharField(max_length=255)
     file_size = models.BigIntegerField()
     file_type = models.CharField(max_length=50)
+    resource_type = models.CharField(max_length=20, choices=RESOURCE_TYPE_CHOICES, default='image', db_index=True)
+    linked_file = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='linked_children')
+    stored_path = models.CharField(max_length=500, default='', blank=True)
     upload_time = models.DateTimeField(default=timezone.localtime)
     tag = models.CharField(max_length=20, choices=TAG_CHOICES, default='Other')
 
@@ -280,12 +290,20 @@ class DetectionTask(models.Model):
         ('completed', '已完成'),
     ]
 
+    TASK_TYPE_CHOICES = [
+        ('image', 'Image'),
+        ('paper', 'Paper'),
+        ('review', 'Review'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)  # 任务属于哪个用户
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, db_index=True, null=True, blank=True)
+    task_type = models.CharField(max_length=20, choices=TASK_TYPE_CHOICES, default='image', db_index=True)
     task_name = models.CharField(max_length=255)  # 任务名称，用户可以自定义
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')  # 任务状态
     upload_time = models.DateTimeField(default=timezone.localtime)  # 上传时间
     completion_time = models.DateTimeField(null=True, blank=True)  # 完成时间（如果已完成）
+    resource_files = models.ManyToManyField(FileManagement, related_name='detection_tasks', blank=True)
     report_file = models.FileField(upload_to='reports/', null=True, blank=True,
                                    help_text='生成的 PDF 检测报告')
     # 记录参数，包括cmd_block_size（整数） urn_k（小数） if_use_llm（True或False）

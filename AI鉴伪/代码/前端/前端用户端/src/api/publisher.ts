@@ -41,6 +41,14 @@ export default {
     return http.post('/detection/submit/', data)
   },
 
+  createResourceTask(data: {
+    task_type: 'paper' | 'review'
+    task_name?: string
+    file_ids: number[]
+  }) {
+    return http.post('/resource-task/create/', data)
+  },
+
   //获取某个任务的所有图片的AI检测结果
   getTaskResults(data: any) {
     return http.get(`/tasks/${data}/results/`)

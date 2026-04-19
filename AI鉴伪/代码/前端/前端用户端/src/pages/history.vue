@@ -134,6 +134,7 @@ const headers = [
 
 interface Task {
   task_id: string
+  task_type?: 'image' | 'paper' | 'review'
   upload_time: string
   completion_time: string
   status: 'pending' | 'in_progress' | 'completed'
@@ -247,6 +248,7 @@ const fetchTasks = async (page: number, pageSize: number) => {
 
     tasks.value = taskList.map((task: any) => ({
       task_id: task.task_id,
+      task_type: task.task_type,
       upload_time: task.upload_time,
       completion_time: task.completion_time,
       status: task.status
