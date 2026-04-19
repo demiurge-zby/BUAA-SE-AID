@@ -2,8 +2,11 @@ from easydict import EasyDict
 import time
 import os.path as osp
 
+THIS_DIR = osp.dirname(osp.abspath(__file__))
+URN_ROOT = osp.dirname(THIS_DIR)
+
 # 配置
-base_dir = '/root/autodl-tmp/SE/URN'
+base_dir = URN_ROOT
 config_dict = EasyDict({
     # ----------------------------------------------------------------------------------------------------
     "logs_dir": osp.join(base_dir, f"logs/{str(time.time()).replace('.', '-')}"),  # 日志目录

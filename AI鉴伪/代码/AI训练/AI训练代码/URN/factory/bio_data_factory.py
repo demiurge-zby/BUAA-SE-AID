@@ -1,5 +1,6 @@
 from torch.utils.data import DataLoader
 import os.path as osp
+import sys
 from data.my_bio_dataset import BioBaseDataset, BioDataset
 
 
@@ -58,9 +59,10 @@ def get_dataloader(dataset: BioBaseDataset, split: str, batch_size=32):
     :param batch_size: batch size for input data
     :return: dataloader
     """
+    num_workers = 0 if sys.platform.startswith('win') else (2 if split == 'train' else 1)
     data_loader = DataLoader(
         dataset,
-        num_workers=2 if split == 'train' else 1,
+        num_workers=num_workers,
         pin_memory=True if split == 'train' else False,
         shuffle=True if split == 'train' else False,
         batch_size=batch_size if split == 'train' else 1

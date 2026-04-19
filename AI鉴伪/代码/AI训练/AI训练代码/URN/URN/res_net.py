@@ -6,9 +6,6 @@ import torchsnooper
 import torchvision
 import numpy as np
 import ssl
-import baal
-
-from baal.bayesian import Dropout
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -145,17 +142,23 @@ def resnet(pretrained=False, layers=[3, 4, 6, 3], backbone='resnet50', n_input=3
     """
     model = ResNet(Bottleneck, layers, n_input=n_input, **kwargs)
 
-    pretrain_dict = model_zoo.load_url(model_urls[backbone])
+    if not pretrained:
+        return model
+
     try:
-        model.load_state_dict(pretrain_dict, strict=False)
-    except:
-        print("loss conv1")
-        model_dict = {}
-        for k, v in pretrain_dict.items():
-            if k in pretrain_dict and 'conv1' not in k:
-                model_dict[k] = v
-        model.load_state_dict(model_dict, strict=False)
-    print("load resnet50 pretrain success")
+        pretrain_dict = model_zoo.load_url(model_urls[backbone])
+        try:
+            model.load_state_dict(pretrain_dict, strict=False)
+        except Exception:
+            print("loss conv1")
+            model_dict = {}
+            for k, v in pretrain_dict.items():
+                if k in pretrain_dict and 'conv1' not in k:
+                    model_dict[k] = v
+            model.load_state_dict(model_dict, strict=False)
+        print("load resnet50 pretrain success")
+    except Exception as exc:
+        print(f"load resnet50 pretrain skipped: {exc}")
     return model
 
 
@@ -192,7 +195,7 @@ class My_ResNet50_MCD(nn.Module):
         super(My_ResNet50_MCD, self).__init__()
         self.model = resnet(n_input=n_input, pretrained=pretrained, layers=[3, 4, 6, 3], backbone='resnet50')
         self.relu = self.model.relu  # Place a hook
-        self.dropout = Dropout(p=dropout_rate)
+        self.dropout = nn.Dropout(p=dropout_rate)
 
         layers_cfg = [4, 5, 6, 7]
         self.blocks = []

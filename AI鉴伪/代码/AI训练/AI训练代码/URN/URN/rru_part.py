@@ -1,4 +1,3 @@
-import baal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -97,7 +96,7 @@ class RU_double_conv_MCD(nn.Module):
             nn.Conv2d(in_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True),
-            baal.bayesian.dropout.Dropout(p=dropout_rate),
+            nn.Dropout(p=dropout_rate),
             nn.Conv2d(out_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch))
 

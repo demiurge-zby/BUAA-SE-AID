@@ -59,6 +59,16 @@ logs/
 *.npy
 *.npz
 
+# AI training datasets / logs
+AI鉴伪/代码/AI训练/AI训练代码/URN/logs/
+AI鉴伪/代码/AI训练/AI训练代码/URN/data/BioFors/
+AI鉴伪/代码/AI训练/AI训练代码/URN/data/SciSp_H/
+AI鉴伪/代码/AI训练/AI训练代码/URN/data/RSIID/
+AI鉴伪/代码/AI训练/AI训练代码/BioFors/
+AI鉴伪/代码/AI训练/AI训练代码/URN/checkpoints/
+AI鉴伪/代码/AI训练/AI训练代码/URN/**/*.pkl
+AI鉴伪/代码/AI训练/AI训练代码/URN/**/*.pt
+
 # Archives / generated reports
 *.zip
 *.tar

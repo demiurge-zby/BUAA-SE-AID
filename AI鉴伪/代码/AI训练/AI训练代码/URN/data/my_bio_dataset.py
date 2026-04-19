@@ -13,6 +13,13 @@ import torch
 from torchvision.utils import make_grid
 
 
+def imread_unicode(path, flags):
+    data = np.fromfile(path, dtype=np.uint8)
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, flags)
+
+
 def get_grid_img(img, gt, pred, k=0.5):
     gt_255 = gt * 255.0
     print(gt_255)
@@ -35,11 +42,11 @@ def get_img_and_mask(img_dir, mask_dir, cls_index, keep_scale=False):
     :param mask_dir: Path of mask file
     :return: a dict with keys 'img', 'mask'
     """
-    img = cv2.imread(img_dir)
+    img = imread_unicode(img_dir, cv2.IMREAD_COLOR)
     try:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        if mask_dir == 'None':
+        if mask_dir.lower() == 'none':
             try:
                 if cls_index == 0:
                     mask = np.zeros((img.shape[0], img.shape[1]))
@@ -52,7 +59,7 @@ def get_img_and_mask(img_dir, mask_dir, cls_index, keep_scale=False):
                 else:
                     mask = np.ones((img.shape[0], img.shape[1])) * 255
         else:
-            mask = cv2.imread(mask_dir, cv2.IMREAD_GRAYSCALE)
+            mask = imread_unicode(mask_dir, cv2.IMREAD_GRAYSCALE)
 
     except ValueError:
         print(img_dir, mask_dir)
@@ -142,19 +149,20 @@ class BioBaseDataset(torch.utils.data.Dataset):
         if self.txt_file is None:
             print("Initializing an empty dataset!")
             return
-        with open(self.txt_file, 'r') as f:  # Image path [space] mask path or None [space] 0 or 1“
+        with open(self.txt_file, 'r', encoding='utf-8-sig') as f:  # Image path [space] mask path or None [space] 0 or 1“
             line = f.readline()
             while line:
                 line = line.replace('\n', '').replace('\r', '')
-                try:
-                    img_dir, mask_dir = self.get_true_dir(line.split(' ')[0], line.split(' ')[1])
-                except IndexError:
+                parts = line.split()
+                if len(parts) < 3:
                     print(line, '!!')
-                    # img_dir, mask_dir = self.get_true_dir(line.split(' ')[0], line.split(' ')[1])
+                    line = f.readline()
+                    continue
 
+                img_dir, mask_dir = self.get_true_dir(parts[0], parts[1])
                 self.img_list.append(img_dir)
                 self.mask_list.append(mask_dir)
-                cls_gt = line.split(' ')[2]
+                cls_gt = parts[2]
                 self.cls_list.append(1 if int(cls_gt) > 0 else 0)
                 line = f.readline()
 
