@@ -75,6 +75,7 @@ urlpatterns = [
     # 新增: 人工审查相关的URL
     path('publishers/<int:publisher_id>/reviewers/', views_review.get_reviewers_for_publisher),
     path('create_review_task_with_admin_check/', views_review.create_review_task_with_admin_check, name='create_review_task_with_admin_check'),
+    path('create_resource_review_task_placeholder/', views_review.create_resource_review_task_placeholder, name='create_resource_review_task_placeholder'),
     path('get_request_completion_status/<int:task_id>/', views_review.get_request_completion_status, name='get_request_completion_status'),
     path('get_request_detail/<int:reviewRequest_id>/', views_review.get_request_detail, name='get_request_detail'),
     path('get_reviewer_tasks/', views_review.get_reviewer_manual_request, name='get_reviewer_tasks'),

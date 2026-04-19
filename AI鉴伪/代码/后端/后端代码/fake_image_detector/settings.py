@@ -101,10 +101,10 @@ WSGI_APPLICATION = "fake_image_detector.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'fake_image_detector_db_beta',  # 替换为你的数据库名
-        'USER': 'lzy',         # 替换为你的MySQL用户名
-        'PASSWORD': 'root123', # 替换为你的MySQL密码
-        'HOST': '122.9.45.122',
+        'NAME': 'se',  # 替换为你的数据库名
+        'USER': 'WSL',         # 替换为你的MySQL用户名
+        'PASSWORD': 'FJ78865037630', # 替换为你的MySQL密码
+        'HOST': '172.27.16.1',
         'PORT': '3306',
     }
 }

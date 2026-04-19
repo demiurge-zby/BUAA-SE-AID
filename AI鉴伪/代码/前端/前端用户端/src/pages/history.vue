@@ -1,38 +1,179 @@
 <template>
   <v-card flat border="0">
-    <!-- 任务详情弹窗 -->
-    <v-dialog v-model="showDetail" max-width="800" persistent>
-      <task-detail v-if="showDetail" :task="currentTask" @close="showDetail = false" />
-    </v-dialog>
-
-    <v-card-title class="d-flex align-center pa-0">
-      <h1 class="text-h4 font-weight-bold">检测历史</h1>
+    <v-card-title class="d-flex flex-wrap align-center pa-0 ga-3">
+      <div>
+        <h1 class="text-h4 font-weight-bold">检测历史</h1>
+        <div class="text-caption text-medium-emphasis mt-1">默认按时间倒序展示最近半年任务</div>
+      </div>
       <v-spacer></v-spacer>
-      <v-btn variant="outlined" class="mr-2" @click="showFilter = true"
-        :color="hasActiveFilters ? 'primary' : undefined">
+      <v-text-field
+        v-model="filters.keyword"
+        density="comfortable"
+        variant="outlined"
+        prepend-inner-icon="mdi-magnify"
+        placeholder="搜索任务名/关键字/任务编号"
+        clearable
+        hide-details
+        class="search-input"
+      />
+      <v-btn
+        variant="outlined"
+        @click="showFilter = true"
+        :color="hasActiveFilters ? 'primary' : undefined"
+      >
         <v-icon class="mr-2">mdi-filter</v-icon>
         筛选
       </v-btn>
-      <!-- <v-btn variant="outlined">新建</v-btn> -->
     </v-card-title>
 
-    <!-- 筛选对话框 -->
-    <v-dialog v-model="showFilter" max-width="500">
+    <v-card-text class="pa-0 mt-4">
+      <v-data-table
+        :headers="headers"
+        :items="tasks"
+        :loading="loading"
+        :items-per-page="pageSize"
+        class="elevation-1"
+        item-value="task_id"
+        hide-default-footer
+      >
+        <template #item.task_id="{ item }">
+          <v-btn variant="text" color="primary" @click="openTaskDetail(item)">
+            #{{ item.task_id }}
+          </v-btn>
+        </template>
+
+        <template #item.task_type="{ item }">
+          <v-chip size="small" color="indigo-lighten-4" class="text-indigo-darken-4">
+            {{ getTaskTypeLabel(item.task_type) }}
+          </v-chip>
+        </template>
+
+        <template #item.upload_time="{ item }">
+          <span>{{ formatDateTime(item.upload_time) }}</span>
+        </template>
+
+        <template #item.status="{ item }">
+          <v-chip :color="getStatusColor(item.status)" size="small">
+            {{ getStatus(item.status) }}
+          </v-chip>
+        </template>
+
+        <template #item.actions="{ item }">
+          <div class="d-flex justify-center ga-2">
+            <v-btn
+              size="small"
+              color="primary"
+              variant="text"
+              :disabled="item.status !== 'completed'"
+              @click="goToTaskPage(item)"
+            >
+              下一步
+            </v-btn>
+            <v-btn
+              size="small"
+              color="secondary"
+              variant="text"
+              :disabled="item.status !== 'completed'"
+              @click="downloadTaskReport(item)"
+            >
+              下载报告
+            </v-btn>
+            <v-btn
+              size="small"
+              color="error"
+              variant="text"
+              :disabled="item.status !== 'completed'"
+              @click="openDeleteDialog(item)"
+            >
+              删除
+            </v-btn>
+          </div>
+        </template>
+
+        <template #top>
+          <div class="d-flex align-center pa-4">
+            <div class="text-caption text-medium-emphasis">共 {{ totalTasks }} 条记录</div>
+          </div>
+        </template>
+
+        <template #no-data>
+          <div class="py-8 text-center text-medium-emphasis">暂无符合条件的检测记录</div>
+        </template>
+      </v-data-table>
+
+      <div class="d-flex align-center justify-center pa-4">
+        <div class="d-flex align-center">
+          <span class="text-caption mr-2">每页显示</span>
+          <v-select
+            v-model="pageSize"
+            :items="[5, 10, 20, 50, 100]"
+            density="compact"
+            variant="outlined"
+            hide-details
+            style="width: 100px"
+            @update:model-value="handlePageSizeChange"
+          />
+          <span class="text-caption ml-2">条</span>
+        </div>
+        <v-pagination
+          v-model="currentPage"
+          :length="totalPages"
+          :total-visible="7"
+          class="ml-4"
+          @update:model-value="handlePageChange"
+        />
+      </div>
+    </v-card-text>
+
+    <v-dialog v-model="showFilter" max-width="520">
       <v-card class="elevation-4">
         <v-card-title class="text-h6 font-weight-bold">筛选条件</v-card-title>
         <v-card-text>
-          <div class="d-flex flex-column gap-4">
-            <v-select v-model="filters.status" :items="statusOptions" label="任务状态" clearable hide-details></v-select>
+          <div class="d-flex flex-column ga-4">
+            <v-select
+              v-model="filters.status"
+              :items="statusOptions"
+              label="任务状态"
+              clearable
+              hide-details
+            />
 
-            <v-select v-model="filters.timeRange" :items="timeRangeOptions" label="快速选择时间范围" clearable hide-details
-              @update:model-value="handleTimeRangeChange"></v-select>
+            <v-select
+              v-model="filters.taskType"
+              :items="taskTypeOptions"
+              label="任务类别"
+              clearable
+              hide-details
+            />
 
-            <div class="d-flex align-center gap-4">
-              <v-text-field v-model="filters.startDate" label="开始时间" type="datetime-local" hide-details
-                density="compact" :error-messages="timeError"
-                @update:model-value="handleCustomTimeChange"></v-text-field>
-              <v-text-field v-model="filters.endDate" label="结束时间" type="datetime-local" hide-details density="compact"
-                :error-messages="timeError" @update:model-value="handleCustomTimeChange"></v-text-field>
+            <v-select
+              v-model="filters.timeRange"
+              :items="timeRangeOptions"
+              label="快速选择时间范围"
+              clearable
+              hide-details
+              @update:model-value="handleTimeRangeChange"
+            />
+
+            <div class="d-flex align-center ga-3">
+              <v-text-field
+                v-model="filters.startDate"
+                label="开始时间"
+                type="datetime-local"
+                hide-details
+                density="compact"
+                :error-messages="timeError"
+                @update:model-value="handleCustomTimeChange"
+              />
+              <v-text-field
+                v-model="filters.endDate"
+                label="结束时间"
+                type="datetime-local"
+                hide-details
+                density="compact"
+                :error-messages="timeError"
+                @update:model-value="handleCustomTimeChange"
+              />
             </div>
           </div>
         </v-card-text>
@@ -44,74 +185,67 @@
       </v-card>
     </v-dialog>
 
-    <v-card-text class="pa-0 mt-4">
-      <v-data-table v-model="selected" :headers="headers" :items="filteredTasks" :items-per-page="10"
-        class="elevation-1" :show-select="showSelection" item-value="id" hide-default-footer>
-        <!-- 任务状态列自定义 -->
-        <template v-slot:item.task_id="{ item }">
-          <span>{{ item.task_id }}</span>
-        </template>
-
-        <template v-slot:item.upload_time="{ item }">
-          <span>{{ formatDateTime(item.upload_time) }}</span>
-        </template>
-
-        <template v-slot:item.completion_time="{ item }">
-          <span>{{ formatDateTime(item.completion_time) }}</span>
-        </template>
-
-        <template v-slot:item.status="{ item }">
-          <div class="d-flex justify-center">
-            <v-chip :color="getStatusColor(item.status)" size="small" class="operation-chip">
-              {{ getStatus(item.status) }}
-            </v-chip>
-          </div>
-        </template>
-
-        <!-- 操作列自定义 -->
-        <template v-slot:item.actions="{ item }">
-          <div class="d-flex justify-center gap-2">
-            <v-btn size="small" color="primary" variant="text" @click="handleNext(item)"
-              :disabled="item.status !== 'completed'">
+    <v-dialog v-model="showDetail" max-width="640">
+      <v-card v-if="currentTask">
+        <v-card-title class="d-flex align-center">
+          任务详情
+          <v-spacer></v-spacer>
+          <v-btn icon="mdi-close" variant="text" @click="showDetail = false" />
+        </v-card-title>
+        <v-card-text class="pt-2">
+          <v-list lines="two">
+            <v-list-item title="任务编号" :subtitle="String(currentTask.task_id)" />
+            <v-list-item title="任务名称" :subtitle="currentTask.task_name || '-'" />
+            <v-list-item title="检测对象类型" :subtitle="getTaskTypeLabel(currentTask.task_type)" />
+            <v-list-item title="提交时间" :subtitle="formatDateTime(currentTask.upload_time)" />
+            <v-list-item title="完成时间" :subtitle="formatDateTime(currentTask.completion_time) || '-'" />
+            <v-list-item title="检测状态" :subtitle="getStatus(currentTask.status)" />
+            <v-list-item title="检测结果摘要" :subtitle="currentTask.result_summary || '-'" />
+          </v-list>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+            <v-btn
+              color="primary"
+              variant="text"
+              :disabled="currentTask.status !== 'completed'"
+              @click="goToTaskPage(currentTask)"
+            >
               下一步
             </v-btn>
-            <v-btn size="small" color="error" variant="text" @click="handleDelete(item)"
-              :disabled="item.status !== 'completed'">
-              删除
-            </v-btn>
-          </div>
-        </template>
+          <v-btn
+            color="secondary"
+            variant="text"
+            @click="downloadTaskReport(currentTask)"
+            :disabled="currentTask.status !== 'completed'"
+          >
+            下载报告
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
-        <template v-slot:top>
-          <div class="d-flex align-center pa-4">
-            <div class="text-caption text-medium-emphasis">
-              共 {{ totalTasks }} 条记录
-            </div>
-          </div>
-        </template>
-      </v-data-table>
-
-      <div class="d-flex align-center justify-center pa-4">
-        <div class="d-flex align-center">
-          <span class="text-caption mr-2">每页显示</span>
-          <v-select v-model="pageSize" :items="[5, 10, 20, 50, 100]" density="compact" variant="outlined" hide-details
-            style="width: 100px" @update:model-value="handlePageSizeChange"></v-select>
-          <span class="text-caption ml-2">条</span>
-        </div>
-        <v-pagination v-model="currentPage" :length="totalPages" :total-visible="7" class="ml-4"
-          @update:model-value="handlePageChange"></v-pagination>
-      </div>
-
-    </v-card-text>
+    <v-dialog v-model="showDeleteDialog" max-width="420">
+      <v-card>
+        <v-card-title class="text-h6">删除确认</v-card-title>
+        <v-card-text>
+          确认删除任务 #{{ pendingDeleteTask?.task_id }} 吗？删除后无法恢复。
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn variant="text" @click="showDeleteDialog = false">取消</v-btn>
+          <v-btn color="error" :loading="deleting" @click="confirmDelete">确认删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-card>
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSnackbarStore } from '@/stores/snackbar'
 import publisher from '@/api/publisher'
-import Review_request_id from './task/[review_request_id].vue'
 
 const router = useRouter()
 const snackbar = useSnackbarStore()
@@ -122,22 +256,28 @@ const currentPage = ref(1)
 const totalTasks = ref(0)
 const totalPages = ref(1)
 const loading = ref(false)
+const deleting = ref(false)
+let searchTimer: number | null = null
 
 // 表格列定义
 const headers = [
   { title: '任务ID', key: 'task_id', align: 'center' as const, width: '120px' },
+  { title: '任务名称', key: 'task_name', align: 'center' as const, width: '180px' },
+  { title: '对象类型', key: 'task_type', align: 'center' as const, width: '120px' },
   { title: '上传时间', key: 'upload_time', align: 'center' as const, width: '180px' },
-  { title: '完成时间', key: 'completion_time', align: 'center' as const, width: '180px' },
   { title: '检测状态', key: 'status', align: 'center' as const, width: '200px' },
-  { title: '操作', key: 'actions', sortable: false, align: 'center' as const, width: '350px' }
+  { title: '结果摘要', key: 'result_summary', align: 'center' as const, width: '180px' },
+  { title: '操作', key: 'actions', sortable: false, align: 'center' as const, width: '280px' }
 ]
 
 interface Task {
-  task_id: string
-  task_type?: 'image' | 'paper' | 'review'
+  task_id: number
+  task_type: 'image' | 'paper' | 'review'
+  task_name: string
   upload_time: string
-  completion_time: string
+  completion_time: string | null
   status: 'pending' | 'in_progress' | 'completed'
+  result_summary: string
 }
 
 // 任务数据
@@ -147,15 +287,24 @@ const tasks = ref<Task[]>([])
 const showFilter = ref(false)
 const filters = ref<{
   status: string | null
+  taskType: 'image' | 'paper' | 'review' | null
   timeRange: string | null
   startDate: string | null
   endDate: string | null
+  keyword: string
 }>({
   status: null,
+  taskType: null,
   timeRange: null,
   startDate: null,
-  endDate: null
+  endDate: null,
+  keyword: ''
 })
+
+const showDetail = ref(false)
+const currentTask = ref<Task | null>(null)
+const showDeleteDialog = ref(false)
+const pendingDeleteTask = ref<Task | null>(null)
 
 // 时间验证相关
 const timeError = ref('')
@@ -166,10 +315,17 @@ const statusOptions = [
   { title: '已完成', value: 'completed' }
 ] as const
 
+const taskTypeOptions = [
+  { title: '学术图像检测', value: 'image' },
+  { title: '全篇论文检测', value: 'paper' },
+  { title: '同行评审 Review 检测', value: 'review' }
+] as const
+
 const timeRangeOptions = [
   { title: '最近一天', value: '1d' },
   { title: '最近一周', value: '7d' },
   { title: '最近一月', value: '30d' },
+  { title: '最近半年', value: '183d' },
   { title: '最近三月', value: '90d' },
   { title: '最近一年', value: '365d' }
 ]
@@ -225,6 +381,14 @@ const fetchTasks = async (page: number, pageSize: number) => {
       params.status = filters.value.status
     }
 
+    if (filters.value.taskType) {
+      params.task_type = filters.value.taskType
+    }
+
+    if (filters.value.keyword.trim()) {
+      params.keyword = filters.value.keyword.trim()
+    }
+
     // 添加时间范围筛选
     if (filters.value.timeRange) {
       const now = Date.now()
@@ -232,6 +396,7 @@ const fetchTasks = async (page: number, pageSize: number) => {
         '1d': 24 * 60 * 60 * 1000,
         '7d': 7 * 24 * 60 * 60 * 1000,
         '30d': 30 * 24 * 60 * 60 * 1000,
+        '183d': 183 * 24 * 60 * 60 * 1000,
         '90d': 90 * 24 * 60 * 60 * 1000,
         '365d': 365 * 24 * 60 * 60 * 1000
       }
@@ -248,10 +413,12 @@ const fetchTasks = async (page: number, pageSize: number) => {
 
     tasks.value = taskList.map((task: any) => ({
       task_id: task.task_id,
-      task_type: task.task_type,
+      task_type: task.task_type || 'image',
+      task_name: task.task_name || `任务 ${task.task_id}`,
       upload_time: task.upload_time,
       completion_time: task.completion_time,
-      status: task.status
+      status: task.status,
+      result_summary: task.result_summary || '-'
     }))
 
     currentPage.value = current_page
@@ -295,6 +462,22 @@ onMounted(() => {
   fetchTasks(currentPage.value, pageSize.value)
 })
 
+watch(() => filters.value.keyword, () => {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer)
+  }
+  searchTimer = window.setTimeout(() => {
+    currentPage.value = 1
+    fetchTasks(1, pageSize.value)
+  }, 300)
+})
+
+onBeforeUnmount(() => {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer)
+  }
+})
+
 const getStatus = (status: string) => {
   switch (status) {
     case 'pending':
@@ -303,6 +486,19 @@ const getStatus = (status: string) => {
       return '进行中'
     case 'completed':
       return '已完成'
+    default:
+      return '未知'
+  }
+}
+
+const getTaskTypeLabel = (taskType: string) => {
+  switch (taskType) {
+    case 'image':
+      return '图像'
+    case 'paper':
+      return '论文'
+    case 'review':
+      return 'Review'
     default:
       return '未知'
   }
@@ -321,32 +517,24 @@ const getStatusColor = (status: string) => {
   }
 }
 
-// 选择相关状态
-const showSelection = ref(false)
-const selected = ref([])
-
-// 控制详情页显示
-const showDetail = ref(false)
-const currentTask = ref<any>(null)
-
 // 判断是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return filters.value.startDate ||
+  return filters.value.keyword.trim() ||
+    filters.value.startDate ||
     filters.value.endDate ||
-    filters.value.status !== null
-})
-
-// 筛选后的任务列表
-const filteredTasks = computed(() => {
-  return tasks.value
+    filters.value.status !== null ||
+    filters.value.taskType !== null ||
+    filters.value.timeRange !== null
 })
 
 const resetFilters = () => {
   filters.value = {
     status: null,
+    taskType: null,
     timeRange: null,
     startDate: null,
-    endDate: null
+    endDate: null,
+    keyword: ''
   }
   timeError.value = ''
   // 重置到第一页并重新获取数据
@@ -364,23 +552,70 @@ const applyFilters = () => {
   fetchTasks(1, pageSize.value)
 }
 
-// 操作按钮处理函数
-const handleNext = (item: Task) => {
+const openTaskDetail = (item: Task) => {
+  currentTask.value = item
+  showDetail.value = true
+}
+
+const goToTaskPage = (item: Task) => {
   router.push(`/step/${item.task_id}`)
 }
 
-//处理删除
-const handleDelete = async (item: Task) => {
+const downloadTaskReport = async (item: Task) => {
   try {
-    await publisher.deleteDetectionTask({ task_id: item.task_id })
-    fetchTasks(currentPage.value, pageSize.value)
+    const response = await publisher.downloadReport(item.task_id)
+    const contentDisposition = response.headers['content-disposition']
+    let fileName = `task_${item.task_id}_report.pdf`
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="(.+)"/)
+      if (match) {
+        fileName = match[1]
+      }
+    }
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    snackbar.showMessage('报告下载成功', 'success')
+  } catch (error: any) {
+    if (error?.response?.status === 202) {
+      snackbar.showMessage('报告正在生成中，请稍后重试', 'warning')
+      return
+    }
+    snackbar.showMessage('报告下载失败', 'error')
+  }
+}
+
+const openDeleteDialog = (item: Task) => {
+  pendingDeleteTask.value = item
+  showDeleteDialog.value = true
+}
+
+const confirmDelete = async () => {
+  if (!pendingDeleteTask.value) {
+    return
+  }
+  deleting.value = true
+  try {
+    await publisher.deleteDetectionTask({ task_id: pendingDeleteTask.value.task_id })
+    showDeleteDialog.value = false
+    pendingDeleteTask.value = null
+    snackbar.showMessage('删除成功', 'success')
+    await fetchTasks(currentPage.value, pageSize.value)
   } catch {
     snackbar.showMessage('删除检测任务失败', 'error')
+  } finally {
+    deleting.value = false
   }
 }
 
 // 时间格式化函数
-const formatDateTime = (dateTime: string) => {
+const formatDateTime = (dateTime?: string | null) => {
   if (!dateTime) return ''
   const date = new Date(dateTime)
   const year = date.getFullYear()
@@ -399,12 +634,8 @@ const formatDateTime = (dateTime: string) => {
   width: 100%;
 }
 
-.batch-actions {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  min-width: 300px;
+.search-input {
+  min-width: 320px;
+  max-width: 420px;
 }
 </style>

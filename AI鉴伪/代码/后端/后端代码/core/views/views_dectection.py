@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 from ..models import DetectionResult, ImageUpload, Log, User, DetectionTask, FileManagement
 from django.db.models import Q
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.core.paginator import Paginator
 
 @api_view(['GET'])
@@ -578,17 +578,84 @@ def detection_result_by_image(request, image_id):
 @permission_classes([IsAuthenticated])
 def get_detection_task_status_normal(request, task_id):
     try:
-        # 获取任务和关联的检测结果
-        detection_task = DetectionTask.objects.get(id=task_id)
+        # 获取任务和关联的检测结果，仅允许本人访问
+        detection_task = DetectionTask.objects.get(id=task_id, user=request.user)
         detection_results = DetectionResult.objects.filter(detection_task=detection_task)
+        resource_files = detection_task.resource_files.all().order_by('id')
+
+        result_summary = '检测进行中'
+        if detection_task.status == 'completed':
+            if detection_task.task_type == 'image':
+                total = detection_results.count()
+                fake = detection_results.filter(is_fake=True).count()
+                result_summary = f'疑似造假 {fake}/{total}'
+            elif detection_task.task_type == 'paper':
+                result_summary = '论文检测已完成'
+            elif detection_task.task_type == 'review':
+                result_summary = 'Review 检测已完成'
+
+        fake_resource_files = []
+        normal_resource_files = []
+        pending_resource_files = []
+        split_note = None
+
+        if detection_task.task_type == 'review':
+            keywords = ['fake', 'aigc', '疑似', '异常', '可疑']
+            for f in resource_files:
+                file_item = {
+                    "file_id": f.id,
+                    "file_name": f.file_name,
+                    "resource_type": f.resource_type,
+                    "file_type": f.file_type,
+                    "file_size": f.file_size,
+                    "upload_time": timezone.localtime(f.upload_time),
+                }
+                if detection_task.status != 'completed':
+                    pending_resource_files.append(file_item)
+                elif any(k.lower() in (f.file_name or '').lower() for k in keywords):
+                    fake_resource_files.append(file_item)
+                else:
+                    normal_resource_files.append(file_item)
+
+            if detection_task.status == 'completed':
+                split_note = '当前真假分组为占位逻辑（按文件名关键词），后续将切换为模型细粒度结果。'
+        elif detection_task.task_type == 'paper':
+            for f in resource_files:
+                normal_resource_files.append({
+                    "file_id": f.id,
+                    "file_name": f.file_name,
+                    "resource_type": f.resource_type,
+                    "file_type": f.file_type,
+                    "file_size": f.file_size,
+                    "upload_time": timezone.localtime(f.upload_time),
+                })
+            if detection_task.status == 'completed':
+                split_note = '论文检测结果当前不提供真伪二分类，后续将补充更细粒度风险分层。'
 
         # 收集任务相关的图像和状态信息
         task_status = {
             "task_id": detection_task.id,
             "task_name": detection_task.task_name,
+            "task_type": detection_task.task_type,
             "status": detection_task.status,
             "upload_time": timezone.localtime(detection_task.upload_time),
-            "completion_time": timezone.localtime(detection_task.completion_time),
+            "completion_time": timezone.localtime(detection_task.completion_time) if detection_task.completion_time else None,
+            "result_summary": result_summary,
+            "resource_files": [
+                {
+                    "file_id": f.id,
+                    "file_name": f.file_name,
+                    "resource_type": f.resource_type,
+                    "file_type": f.file_type,
+                    "file_size": f.file_size,
+                    "upload_time": timezone.localtime(f.upload_time),
+                }
+                for f in resource_files
+            ],
+            "fake_resource_files": fake_resource_files,
+            "normal_resource_files": normal_resource_files,
+            "pending_resource_files": pending_resource_files,
+            "resource_split_note": split_note,
             "detection_results": []
         }
 
@@ -604,7 +671,7 @@ def get_detection_task_status_normal(request, task_id):
         return Response(task_status)
 
     except DetectionTask.DoesNotExist:
-        return Response({"message": "Detection task not found"}, status=404)
+        return Response({"message": "Detection task not found or permission denied"}, status=404)
 
 from rest_framework.pagination import PageNumberPagination
 
@@ -696,22 +763,66 @@ def create_resource_task(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_tasks(request):
-    # 获取分页参数
-    page = int( request.query_params.get('page', 1))
-    page_size = int(request.query_params.get('page_size', 10))
-    status = request.query_params.get('status', '')
-    start_time = request.query_params.get('startTime', None)
-    end_time = request.query_params.get('endTime', None)
+    def parse_datetime_param(value):
+        if not value:
+            return None
+        formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M',
+            '%Y-%m-%d',
+        ]
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(value, fmt)
+                if timezone.is_naive(parsed):
+                    return timezone.make_aware(parsed, timezone.get_current_timezone())
+                return parsed
+            except ValueError:
+                continue
+        return 'invalid'
 
-    # 获取当前用户的所有检测任务并应用筛选条件
+    # 获取分页参数
+    page = int(request.query_params.get('page', 1))
+    page_size = int(request.query_params.get('page_size', 10))
+    status = request.query_params.get('status', '').strip()
+    task_type = request.query_params.get('task_type', '').strip()
+    keyword = request.query_params.get('keyword', '').strip()
+    start_time_raw = request.query_params.get('startTime', None)
+    end_time_raw = request.query_params.get('endTime', None)
+
+    start_time = parse_datetime_param(start_time_raw)
+    end_time = parse_datetime_param(end_time_raw)
+
+    if start_time == 'invalid':
+        return Response({'error': 'Invalid startTime format'}, status=400)
+    if end_time == 'invalid':
+        return Response({'error': 'Invalid endTime format'}, status=400)
+    if start_time and end_time and start_time >= end_time:
+        return Response({'error': 'startTime must be earlier than endTime'}, status=400)
+
+    # 获取当前用户的所有检测任务并应用筛选条件，默认展示最近半年
     tasks = DetectionTask.objects.filter(user=request.user).order_by('-upload_time')
-    
+
     if status:
         tasks = tasks.filter(status=status)
+
+    if task_type:
+        tasks = tasks.filter(task_type=task_type)
+
+    if keyword:
+        keyword_filter = Q(task_name__icontains=keyword)
+        if keyword.isdigit():
+            keyword_filter = keyword_filter | Q(id=int(keyword))
+        tasks = tasks.filter(keyword_filter)
+
     if start_time:
         tasks = tasks.filter(upload_time__gte=start_time)
     if end_time:
         tasks = tasks.filter(upload_time__lte=end_time)
+    if not start_time and not end_time:
+        half_year_ago = timezone.now() - timedelta(days=183)
+        tasks = tasks.filter(upload_time__gte=half_year_ago)
 
     paginator = Paginator(tasks, page_size)
 
@@ -720,17 +831,29 @@ def get_user_tasks(request):
     except Exception:
         return Response({'error': 'Invalid page number'}, status=400)
 
-    task_data = [
-        {
+    task_data = []
+    for task in page_obj.object_list:
+        result_summary = '检测进行中'
+        if task.status == 'completed':
+            if task.task_type == 'image':
+                total = task.detection_results.count()
+                fake = task.detection_results.filter(is_fake=True).count()
+                result_summary = f'疑似造假 {fake}/{total}'
+            elif task.task_type == 'paper':
+                result_summary = '论文检测已完成'
+            elif task.task_type == 'review':
+                result_summary = 'Review 检测已完成'
+
+        task_data.append({
             'task_id': task.id,
             'task_type': task.task_type,
             'task_name': task.task_name,
             'upload_time': timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M:%S'),
             'status': task.status,
+            'result_summary': result_summary,
             'completion_time': timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M:%S') if task.completion_time else None,
             'resource_file_ids': list(task.resource_files.values_list('id', flat=True))
-        } for task in page_obj.object_list
-    ]
+        })
 
     return Response({
         'tasks': task_data,
@@ -779,10 +902,10 @@ class DetectionTaskDeleteView(APIView):
 
     def delete(self, request, task_id, *args, **kwargs):
         try:
-            task = DetectionTask.objects.get(pk=task_id)
+            task = DetectionTask.objects.get(pk=task_id, user=request.user)
         except DetectionTask.DoesNotExist:
             return Response(
-                {"detail": "任务不存在"},
+                {"detail": "任务不存在或无权限删除"},
                 status=status.HTTP_404_NOT_FOUND
             )
 

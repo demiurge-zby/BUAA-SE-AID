@@ -1,4 +1,3 @@
-import { da } from 'vuetify/locale'
 import http from './request'
 
 export default {
@@ -64,6 +63,19 @@ export default {
 
   getSingleImageResult(data: any) {
     return http.get(`/results/${data}/`)
+  },
+
+  getDetectionTaskDetail(data: { task_id: string | number }) {
+    return http.get(`/detection-task/${data.task_id}/status/`)
+  },
+
+  submitResourceReviewRequest(data: {
+    task_id: string | number
+    reviewers: number[]
+    selected_file_ids?: number[]
+    reason?: string
+  }) {
+    return http.post('/create_resource_review_task_placeholder/', data)
   },
 
   downloadReport(data: any) {

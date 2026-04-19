@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from ..models import ReviewRequest, DetectionTask, ImageUpload, User, Log
 from core.util import send_notification
 from core.models import Notification
+import uuid
 
 
 @api_view(['GET'])
@@ -162,6 +163,101 @@ def create_review_task_with_admin_check(request):
 
     except Exception as e:
         return Response({'error': f'Server error: {str(e)}'}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_resource_review_task_placeholder(request):
+    """
+    论文 / Review 人工审核提交占位接口。
+    该接口先打通前后端联调，不落库，后续替换为正式审核流转逻辑。
+    """
+    user = request.user
+    if not user.has_permission('publish'):
+        return Response({'error': '该用户没有发布人工审核的权限'}, status=403)
+
+    if user.role != 'publisher':
+        return Response({'error': 'Only publishers can create review tasks'}, status=403)
+
+    task_id = request.data.get('task_id')
+    reviewers = request.data.get('reviewers', [])
+    reason = request.data.get('reason', '').strip() or 'No reason provided'
+    selected_file_ids = request.data.get('selected_file_ids', [])
+
+    if not task_id:
+        return Response({'error': 'task_id is required'}, status=400)
+    if not isinstance(reviewers, list) or not reviewers:
+        return Response({'error': 'reviewers is required and must be a non-empty list'}, status=400)
+    if selected_file_ids and not isinstance(selected_file_ids, list):
+        return Response({'error': 'selected_file_ids must be a list'}, status=400)
+
+    try:
+        detection_task = DetectionTask.objects.get(id=task_id, user=user)
+    except DetectionTask.DoesNotExist:
+        return Response({'error': 'Detection task not found or permission denied'}, status=404)
+
+    if detection_task.task_type not in ('paper', 'review'):
+        return Response({'error': 'This endpoint only supports paper/review tasks'}, status=400)
+
+    if detection_task.status != 'completed':
+        return Response({'error': 'Task is not completed yet'}, status=400)
+
+    reviewer_users = User.objects.filter(organization=user.organization, id__in=reviewers, role='reviewer')
+    if reviewer_users.count() != len(set(reviewers)):
+        return Response({'error': 'Some reviewer IDs do not exist or are not reviewers'}, status=404)
+
+    task_files = detection_task.resource_files.all()
+    if selected_file_ids:
+        selected_files = task_files.filter(id__in=selected_file_ids)
+        if selected_files.count() != len(set(selected_file_ids)):
+            return Response({'error': 'Some selected_file_ids do not belong to current task'}, status=400)
+    else:
+        selected_files = task_files
+
+    payload = {
+        'placeholder_request_id': f'RR-{uuid.uuid4().hex[:10]}',
+        'task_id': detection_task.id,
+        'task_type': detection_task.task_type,
+        'task_name': detection_task.task_name,
+        'reason': reason,
+        'reviewers': [
+            {
+                'id': u.id,
+                'username': u.username,
+            }
+            for u in reviewer_users
+        ],
+        'selected_files': [
+            {
+                'file_id': f.id,
+                'file_name': f.file_name,
+                'resource_type': f.resource_type,
+            }
+            for f in selected_files
+        ],
+        'ai_snapshot': {
+            'status': detection_task.status,
+            'generated_at': timezone.localtime().strftime('%Y-%m-%d %H:%M:%S'),
+        },
+        'todo': {
+            'persistence': 'ReviewRequest/ManualReview resource schema pending',
+            'assignment': 'admin approval + reviewer assignment pending',
+            'report': 'resource manual review report pipeline pending',
+        },
+    }
+
+    Log.objects.create(
+        user=user,
+        operation_type='review_request',
+        related_model='DetectionTask',
+        related_id=detection_task.id,
+    )
+
+    return Response({
+        'message': 'Resource review request placeholder submitted',
+        'placeholder': True,
+        'payload': payload,
+    }, status=202)
 
 
 @api_view(['GET'])
