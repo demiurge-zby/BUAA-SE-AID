@@ -1,0 +1,72 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# Django / backend runtime
+db.sqlite3
+media/
+staticfiles/
+allstatic/
+uploads/
+logs/
+*.log
+
+# AI / model artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.bin
+*.h5
+*.joblib
+*.pkl
+*.npy
+*.npz
+
+# Archives / generated reports
+*.zip
+*.tar
+*.gz
+*.7z
+*.pdf
+
+# Local caches and temp files
+tmp/
+temp/
+*.tmp
