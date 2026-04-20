@@ -1,164 +1,115 @@
-import paramiko
-import numpy as np
-import pickle
 import base64
-from scp import SCPClient, SCPException
 import os
+import shutil
+import subprocess
 import sys
-import getpass
+import zipfile
+from pathlib import Path
 
-CONNECT = False
 
-def remote_call(hostname, username, port, password):
-    # 初始化SSH客户端
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(hostname=hostname, username=username, port=port, password=password)
+CODE_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_SHARED_ROOT = Path.home() / ".codex" / "memories"
 
-    # 构建执行命令（确保在同一shell中执行）
-    command = "cd /root/autodl-tmp/BUAA_SE_DetectFake && /root/miniconda3/envs/llm/bin/python trigger.py"
-    stdin, stdout, stderr = ssh.exec_command(command)
 
-    # 等待远程输出中出现'success'
-    success_detected = False
-    while True:
-        line = stdout.readline()
-        if not line:  # EOF，流关闭
-            break
-        line = line.strip()
-        print("远程输出:", line)
-        if 'fine from jzy' in line.lower():
-            success_detected = True
-            break
+def _discover_ai_service_dir():
+    configured = os.environ.get("AI_SERVICE_DIR")
+    if configured:
+        return Path(configured)
 
-    if not success_detected:
-        err = stderr.read().decode()
-        ssh.close()
-        if err:
-            raise RuntimeError(f"远程执行错误: {err}")
-        else:
-            raise RuntimeError("远程脚本未返回'success'")
-    return stdin, stdout, stderr, ssh  # 返回ssh以保持连接
+    for child in CODE_ROOT.iterdir():
+        candidate = child / "AI服务器代码" / "local_infer.py"
+        if candidate.exists():
+            return candidate.parent
+    raise FileNotFoundError("Unable to locate the local AI service directory.")
 
-def remote_monitor(stdout, stderr):
-    result_detected = True
-    while True:
-        line = stdout.readline()
-        if not line:  # EOF，流关闭
-            err = stderr.read().decode()
-            if err:
-                raise RuntimeError(f"远程执行错误:{err}")
-            break
-        line = line.strip()
-        print("远程输出:", line)
-        if 'start results' in line.lower():
-            result_detected = True
-            break
-    if not result_detected:
-        err = stderr.read().decode()
-        if err:
-            raise RuntimeError(f"远程执行错误: {err}")
-        else:
-            raise RuntimeError("远程脚本未返回'results'")
-    # 获取剩余的输出
-    output = stdout.readline()
-    # 反序列化结果
-    result_bytes = base64.b64decode(output)
-    return pickle.loads(result_bytes)
 
-def transfer_image(ssh, local_path, remote_path='/root/autodl-tmp/BUAA_SE_DetectFake/test/'):
-    try:
-        # 使用现有的SSH连接进行传输
-        with SCPClient(ssh.get_transport()) as scp:
-            scp.put(local_path, remote_path)
-            print(f"成功传输到: {remote_path}")
-    except SCPException as e:
-        print(f"传输失败: {str(e)}")
-    except Exception as e:
-        print(f"发生错误: {str(e)}")
+AI_SERVICE_DIR = _discover_ai_service_dir()
+AI_SERVICE_TEST_DIR = Path(
+    os.environ.get("AI_SERVICE_TEST_DIR", str(DEFAULT_SHARED_ROOT / ".ai_service_io"))
+)
+AI_SERVICE_ENTRYPOINT = Path(
+    os.environ.get("AI_SERVICE_ENTRYPOINT", str(AI_SERVICE_DIR / "local_infer.py"))
+)
+AI_SERVICE_PYTHON = os.environ.get("AI_SERVICE_PYTHON", sys.executable)
+AI_SERVICE_TMP_DIR = Path(
+    os.environ.get("AI_SERVICE_TMP_DIR", str(DEFAULT_SHARED_ROOT / ".tmp_ai_service"))
+)
+AI_SERVICE_TORCH_HOME = Path(
+    os.environ.get("AI_SERVICE_TORCH_HOME", str(DEFAULT_SHARED_ROOT / ".torch_cache"))
+)
 
-ssh = None
-if CONNECT:
-    host = 'connect.nmb1.seetacloud.com'
-    port = 24241
-    username = 'root'
-    password = "jiitZ48i6Zr+"
-
-    # 建立远程连接并执行命令
-    stdin, stdout, stderr, ssh = remote_call(host, username, port, password)
-
-    print('finish remote_call')
-
-import atexit
-
-# 假设 ssh 是全局变量
-def close_ssh_connection():
-    global ssh
-    try:
-        if ssh:
-            ssh.close()
-            print("SSH 连接已关闭")
-    except Exception as e:
-        print(f"关闭 SSH 连接时发生错误: {e}")
-
-# 注册清理函数
-atexit.register(close_ssh_connection)
 
 def reconnect():
-    global stdin, stdout, stderr, ssh
-    ssh.close()
-    stdin, stdout, stderr, ssh = remote_call(host, username, port, password)
+    return None
 
-def get_result(local_path, json_path):
-    # 传输图片
-    # 参数是路径，因为能用ssh的现成方法
-    global ssh
-    transfer_image(ssh, json_path)
-    transfer_image(ssh, local_path)
 
-    # 获取处理结果
+def _prepare_inputs(local_path, json_path):
+    AI_SERVICE_TEST_DIR.mkdir(parents=True, exist_ok=True)
+    source_zip = Path(local_path)
+    source_json = Path(json_path)
+    target_zip = AI_SERVICE_TEST_DIR / "img.zip"
+    target_json = AI_SERVICE_TEST_DIR / "data.json"
+    if source_json.resolve() != target_json.resolve():
+        shutil.copy2(source_json, target_json)
+    if source_zip.suffix.lower() == ".zip":
+        if source_zip.resolve() != target_zip.resolve():
+            shutil.copy2(source_zip, target_zip)
+    else:
+        with zipfile.ZipFile(target_zip, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.write(source_zip, arcname=source_zip.name)
+    return target_zip, target_json
+
+
+def _decode_output(output):
+    if output is None:
+        return ""
+    if isinstance(output, str):
+        return output
+    for encoding in ("utf-8", "gbk", "utf-8-sig"):
+        try:
+            return output.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return output.decode("utf-8", errors="ignore")
+
+
+def _run_local_inference():
+    AI_SERVICE_TEST_DIR.mkdir(parents=True, exist_ok=True)
+    AI_SERVICE_TMP_DIR.mkdir(parents=True, exist_ok=True)
+    AI_SERVICE_TORCH_HOME.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["AI_SERVICE_TEST_DIR"] = str(AI_SERVICE_TEST_DIR)
+    env["TMP"] = str(AI_SERVICE_TMP_DIR)
+    env["TEMP"] = str(AI_SERVICE_TMP_DIR)
+    env["TMPDIR"] = str(AI_SERVICE_TMP_DIR)
+    env["TORCH_HOME"] = str(AI_SERVICE_TORCH_HOME)
+    process = subprocess.run(
+        [AI_SERVICE_PYTHON, str(AI_SERVICE_ENTRYPOINT)],
+        cwd=str(AI_SERVICE_DIR),
+        capture_output=True,
+        env=env,
+    )
+    stdout_text = _decode_output(process.stdout)
+    stderr_text = _decode_output(process.stderr)
+    if process.returncode != 0:
+        raise RuntimeError(stderr_text.strip() or stdout_text.strip() or "Local AI service failed")
+
+    lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
     try:
-        result = remote_monitor(stdout, stderr)
-        print("远程调用结果:", result)
-    except Exception as e:
-        print(f"发生错误: {str(e)}")
-        return None
-    return result
-
-
-if __name__ == "__main__":
-    # 每次启动服务器，以下参数都要重新设置
-    host = 'connect.nmb1.seetacloud.com'
-    port = 24241
-    username = 'root'
-    password = "jiitZ48i6Zr+"
-
-    # 建立远程连接并执行命令
-    stdin, stdout, stderr, ssh = remote_call(host, username, port, password)
-
-    # 建立起来连接后，之后只要重复以下步骤就可以得到结果，无需重复建立连接
-
-    # 传输图片
-    # 参数是路径，因为能用ssh的现成方法
-    local_path = 'img.zip'
-    json_path = 'data.json'
-    transfer_image(ssh, json_path)
-    transfer_image(ssh, local_path)
-
-    # 获取处理结果
-    try:
-        result = remote_monitor(stdout, stderr)
-        print("远程调用结果:", result)
-        ssh.close()
-    except Exception as e:
-        print(f"发生错误: {str(e)}")
+        index = next(i for i, line in enumerate(lines) if "start results" in line.lower())
+        payload = lines[index + 1]
+    except (StopIteration, IndexError) as exc:
+        raise RuntimeError("Local AI service did not return a serialized result payload.") from exc
 
     import pickle
-    # 保存result
-    with open('result_new_llm.pkl', 'wb') as file:
-        pickle.dump(result, file)
 
-    # with open('result_new_none_llm.pkl', 'rb') as file:
-    #
-    #     data_list = pickle.load(file)
-    #     print(data_list)
+    return pickle.loads(base64.b64decode(payload))
+
+
+def get_result(local_path, json_path):
+    _prepare_inputs(local_path, json_path)
+    try:
+        return _run_local_inference()
+    except Exception as exc:
+        print(f"Local AI inference failed: {exc}")
+        return None

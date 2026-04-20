@@ -24,6 +24,20 @@ import time
 
 from .util import send_ai_detection_complete_notification
 
+
+def _parse_llm_entry(llm_entry):
+    payload = llm_entry[1] if isinstance(llm_entry, (list, tuple)) and len(llm_entry) > 1 else llm_entry
+    if payload is None:
+        return '无', None
+    if isinstance(payload, dict):
+        return payload.get('outputs', '无'), payload.get('mask')
+    if isinstance(payload, (list, tuple)):
+        if payload and isinstance(payload[0], dict):
+            return payload[0].get('outputs', '无'), payload[1] if len(payload) > 1 else None
+        if payload and isinstance(payload[0], str):
+            return payload[0], payload[1] if len(payload) > 1 else None
+    return str(payload), None
+
 def process_image(source_path, target_path):
     """处理图片复制和格式转换"""
     target_path = Path(target_path)

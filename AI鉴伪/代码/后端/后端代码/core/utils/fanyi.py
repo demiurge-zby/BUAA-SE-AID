@@ -6,6 +6,9 @@
 # Please refer to `https://api.fanyi.baidu.com/doc/21` for complete api document
 
 def fanyi_text(query):
+    if not query or query == '无':
+        return query
+
     import requests
     import random
     import json
@@ -35,12 +38,15 @@ def fanyi_text(query):
     payload = {'appid': appid, 'q': query, 'from': from_lang, 'to': to_lang, 'salt': salt, 'sign': sign}
 
     # Send request
-    r = requests.post(url, params=payload, headers=headers)
-    result = r.json()
+    try:
+        r = requests.post(url, params=payload, headers=headers, timeout=5)
+        result = r.json()
+    except Exception:
+        return query
 
     ans = ""
-    for res in result["trans_result"]:
+    for res in result.get("trans_result", []):
         # Print each translation result
         ans += res["dst"] + "\n"
 
-    return ans
+    return ans or query

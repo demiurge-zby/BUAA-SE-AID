@@ -42,6 +42,20 @@ from datetime import datetime
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
+
+def _parse_llm_entry(llm_entry):
+    payload = llm_entry[1] if isinstance(llm_entry, (list, tuple)) and len(llm_entry) > 1 else llm_entry
+    if payload is None:
+        return "无", None
+    if isinstance(payload, dict):
+        return payload.get("outputs", "无"), payload.get("mask")
+    if isinstance(payload, (list, tuple)):
+        if payload and isinstance(payload[0], dict):
+            return payload[0].get("outputs", "无"), payload[1] if len(payload) > 1 else None
+        if payload and isinstance(payload[0], str):
+            return payload[0], payload[1] if len(payload) > 1 else None
+    return str(payload), None
+
 def send_task_completion_notification(user, task_id):
     channel_layer = get_channel_layer()
     group_name = f"user_{user.id}_notifications"  # 为每个用户创建唯一的组名
@@ -251,8 +265,7 @@ def _extract_single_result(raw_results: Any, idx: int) -> Dict[str, Any]:
     """
     # —— LLM 输出 ——
     llm_entry = raw_results[0][1][idx]
-    llm_text = llm_entry[1][0] if llm_entry[1] is not None else "无"
-    llm_img = llm_entry[1][1] if llm_entry[1] is not None else None  # 如有 mask，可自行提取
+    llm_text, llm_img = _parse_llm_entry(llm_entry)
 
     # —— ELA ndarray ——
     ela_np = raw_results[1][1][idx][1]
@@ -302,7 +315,7 @@ def _extract_single_result(raw_results: Any, idx: int) -> Dict[str, Any]:
 
     return {
         "llm_text": llm_text,
-        "llm_img": np.asarray(llm_img).tolist(),
+        "llm_img": np.asarray(llm_img).tolist() if llm_img is not None else None,
         "ela": ela_list,
         "overall_is_fake": overall_is_fake,
         "overall_confidence": overall_confidence,

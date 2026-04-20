@@ -15,8 +15,10 @@ from ..models import DetectionTask, DetectionResult, SubDetectionResult
 
 # ─── 字体注册（宋体） ──────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
-pdfmetrics.registerFont(TTFont('SimSun', 'SimSun.ttf'))  # 中文字体
-pdfmetrics.registerFont(TTFont('SimSun-Bold', 'SimSun-Bold.ttf'))  # 中文加粗字体
+FONT_SIMSUN = "C:/Windows/Fonts/simsun.ttc"
+FONT_SIMSUN_BOLD = "C:/Windows/Fonts/simsunb.ttf"
+pdfmetrics.registerFont(TTFont('SimSun', FONT_SIMSUN))  # 中文字体
+pdfmetrics.registerFont(TTFont('SimSun-Bold', FONT_SIMSUN_BOLD))  # 中文加粗字体
 
 
 # ─── 工具函数：自动换行绘制 ───────────────────────────────

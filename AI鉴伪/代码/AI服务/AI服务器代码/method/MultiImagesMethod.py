@@ -7,6 +7,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS
 import os
 import random
+import tempfile
 from openai import OpenAI
 
 
@@ -56,18 +57,28 @@ class MultiImagesMethod:
         :param image_path:
         :return ela，图像形式的ELA分析结果:
         '''
-        TEMP_FILE = os.path.join(self.cache_path_root, str(random.Random().randint(0, 1000000)) + '.jpg')
         SCALE = 15
+        cache_dir = self.cache_path_root or tempfile.gettempdir()
+        os.makedirs(cache_dir, exist_ok=True)
+        temp_file = None
 
         original = cv2.imread(image_path)
-        cv2.imwrite(TEMP_FILE, original, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        compressed = cv2.imread(TEMP_FILE)
+        if original is None:
+            raise ValueError(f"failed to read image for ELA: {image_path}")
+        with tempfile.NamedTemporaryFile(suffix='.jpg', dir=cache_dir, delete=False) as tmp:
+            temp_file = tmp.name
+        if not cv2.imwrite(temp_file, original, [cv2.IMWRITE_JPEG_QUALITY, 90]):
+            raise ValueError(f"failed to write ELA temp file: {temp_file}")
+        compressed = cv2.imread(temp_file)
+        if compressed is None:
+            raise ValueError(f"failed to read ELA temp file: {temp_file}")
 
         ela = cv2.absdiff(original, compressed) * SCALE
         # translate ela to mask
         mask = cv2.cvtColor(ela, cv2.COLOR_BGR2GRAY)
         try:
-            os.remove(TEMP_FILE)
+            if temp_file:
+                os.remove(temp_file)
         except:
             pass
         return 'ela', mask

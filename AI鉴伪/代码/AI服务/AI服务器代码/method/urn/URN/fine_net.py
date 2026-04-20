@@ -71,7 +71,7 @@ class Fine_ResNet(nn.Module):
 
 
 class My_um_ResNet50(nn.Module):
-    def __init__(self, pretrained=True, n_input=3, dropout_rate=0.5):
+    def __init__(self, pretrained=False, n_input=3, dropout_rate=0.5):
         """Declare all needed layers."""
         super(My_um_ResNet50, self).__init__()
         self.model = resnet(n_input=n_input, pretrained=pretrained, layers=[3, 4, 6, 3], backbone='resnet50')

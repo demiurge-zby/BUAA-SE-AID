@@ -145,22 +145,26 @@ def resnet(pretrained=False, layers=[3, 4, 6, 3], backbone='resnet50', n_input=3
     """
     model = ResNet(Bottleneck, layers, n_input=n_input, **kwargs)
 
-    pretrain_dict = model_zoo.load_url(model_urls[backbone])
-    try:
-        model.load_state_dict(pretrain_dict, strict=False)
-    except:
-        print("loss conv1")
-        model_dict = {}
-        for k, v in pretrain_dict.items():
-            if k in pretrain_dict and 'conv1' not in k:
-                model_dict[k] = v
-        model.load_state_dict(model_dict, strict=False)
-    print("load resnet50 pretrain success")
+    if pretrained:
+        try:
+            pretrain_dict = model_zoo.load_url(model_urls[backbone])
+            try:
+                model.load_state_dict(pretrain_dict, strict=False)
+            except Exception:
+                print("loss conv1")
+                model_dict = {}
+                for k, v in pretrain_dict.items():
+                    if k in pretrain_dict and 'conv1' not in k:
+                        model_dict[k] = v
+                model.load_state_dict(model_dict, strict=False)
+            print("load resnet50 pretrain success")
+        except Exception as exc:
+            print(f"skip resnet pretrained weights: {exc}")
     return model
 
 
 class My_ResNet50(nn.Module):
-    def __init__(self, pretrained=True, n_input=3):
+    def __init__(self, pretrained=False, n_input=3):
         """Declare all needed layers."""
         super(My_ResNet50, self).__init__()
         self.model = resnet(n_input=n_input, pretrained=pretrained, layers=[3, 4, 6, 3], backbone='resnet50')
@@ -187,7 +191,7 @@ class My_ResNet50(nn.Module):
 
 
 class My_ResNet50_MCD(nn.Module):
-    def __init__(self, pretrained=True, n_input=3, dropout_rate=0.5):
+    def __init__(self, pretrained=False, n_input=3, dropout_rate=0.5):
         """Declare all needed layers."""
         super(My_ResNet50_MCD, self).__init__()
         self.model = resnet(n_input=n_input, pretrained=pretrained, layers=[3, 4, 6, 3], backbone='resnet50')
