@@ -80,3 +80,12 @@ AI鉴伪/代码/AI训练/AI训练代码/URN/**/*.pt
 tmp/
 temp/
 *.tmp
+# 自动生成的前端配置
+AI鉴伪/代码/前端/前端用户端/.eslintrc-auto-import.json
+AI鉴伪/代码/前端/前端用户端/package-lock.json
+AI鉴伪/代码/前端/前端用户端/src/auto-imports.d.ts
+AI鉴伪/代码/前端/前端用户端/src/components.d.ts
+AI鉴伪/代码/前端/前端用户端/src/typed-router.d.ts
+
+# 个人测试文件
+api.py

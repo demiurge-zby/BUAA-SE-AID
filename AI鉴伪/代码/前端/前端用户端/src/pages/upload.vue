@@ -63,12 +63,12 @@
                   >
                     <v-icon size="44" color="grey">mdi-file-document-outline</v-icon>
                     <div class="text-body-1 mt-2">点击或拖拽论文文件</div>
-                    <div class="text-caption text-grey">支持 DOCX / PDF / ZIP，单文件 <= 100MB</div>
+                    <div class="text-caption text-grey">支持 DOCX / DOC / PDF / TXT / ZIP，单文件 <= 100MB</div>
                     <input
                       ref="reviewPaperInputRef"
                       type="file"
                       style="display: none"
-                      accept=".docx,.pdf,.zip"
+                      accept=".docx,.doc,.pdf,.txt,.zip"
                       @change="onReviewPaperSelect"
                     >
                   </div>
@@ -95,12 +95,12 @@
                   >
                     <v-icon size="44" color="grey">mdi-comment-text-outline</v-icon>
                     <div class="text-body-1 mt-2">点击或拖拽 Review 文件</div>
-                    <div class="text-caption text-grey">支持 DOCX / PDF / TXT / ZIP，单文件 <= 100MB</div>
+                    <div class="text-caption text-grey">支持 DOCX / DOC / PDF / TXT / ZIP，单文件 <= 100MB</div>
                     <input
                       ref="reviewFileInputRef"
                       type="file"
                       style="display: none"
-                      accept=".docx,.pdf,.txt,.zip"
+                      accept=".docx,.doc,.pdf,.txt,.zip"
                       @change="onReviewFileSelect"
                     >
                   </div>
@@ -210,6 +210,17 @@
           density="comfortable"
           maxlength="64"
           counter
+          class="mb-4"
+        />
+
+        <v-text-field
+          v-if="progressTaskType === 'paper'"
+          v-model="customApiKey"
+          label="自定义API Key (可选)"
+          placeholder="留空则使用系统默认API"
+          variant="outlined"
+          density="comfortable"
+          class="mb-4"
         />
       </v-card-text>
       <v-card-actions v-if="progressTaskType !== 'image'">
@@ -263,13 +274,14 @@ const selectedImages = ref<Image[]>([])
 const currentTag = ref('')
 const currentTaskName = ref('')
 const resourceTaskName = ref('')
+const customApiKey = ref('')
 const uploadedResourceFiles = ref<Array<{ file_id: number, name: string, resource_type: string }>>([])
 const resourceDomainTag = ref('')
 
 const MAX_SIZE = 100 * 1024 * 1024
 const imageExt = new Set(['png', 'jpg', 'jpeg', 'zip'])
-const paperExt = new Set(['docx', 'pdf', 'zip'])
-const reviewExt = new Set(['docx', 'pdf', 'txt', 'zip'])
+const paperExt = new Set(['docx', 'doc', 'pdf', 'txt', 'zip'])
+const reviewExt = new Set(['docx', 'doc', 'pdf', 'txt', 'zip'])
 
 watch(detectionType, () => {
   mainFiles.value = []
@@ -289,7 +301,7 @@ const uploadCardSubtitle = computed(() => {
     return '支持 PNG / JPG / JPEG / ZIP。可上传单张或多张图片文件。'
   }
   if (detectionType.value === 'paper') {
-    return '支持 DOCX / PDF / ZIP。用于全篇论文 AIGC 检测。'
+    return '支持 DOCX / DOC / PDF / TXT / ZIP。用于全篇论文 AIGC 检测。'
   }
   return '请先上传原论文，再上传对应 Review 文件。二者均通过校验才允许提交。'
 })
@@ -298,11 +310,11 @@ const formatHint = computed(() => {
   if (detectionType.value === 'image') {
     return '支持 PNG、JPG、JPEG、ZIP，单文件不超过 100MB。'
   }
-  return '支持 DOCX、PDF、ZIP，单文件不超过 100MB。'
+  return '支持 DOCX、DOC、PDF、TXT、ZIP，单文件不超过 100MB。'
 })
 
 const acceptString = computed(() => {
-  return detectionType.value === 'image' ? '.png,.jpg,.jpeg,.zip' : '.docx,.pdf,.zip'
+  return detectionType.value === 'image' ? '.png,.jpg,.jpeg,.zip' : '.docx,.doc,.pdf,.txt,.zip'
 })
 
 const resourceDomainOptions = [
@@ -348,10 +360,10 @@ const validateFile = (file: File, type: DetectionType | 'review-paper' | 'review
     return '图像检测仅支持 PNG/JPG/JPEG/ZIP'
   }
   if ((type === 'paper' || type === 'review-paper') && !paperExt.has(ext)) {
-    return '论文文件仅支持 DOCX/PDF/ZIP'
+    return '论文文件仅支持 DOCX/DOC/PDF/TXT/ZIP'
   }
   if (type === 'review-file' && !reviewExt.has(ext)) {
-    return 'Review 文件仅支持 DOCX/PDF/TXT/ZIP'
+    return 'Review 文件仅支持 DOCX/DOC/PDF/TXT/ZIP'
   }
 
   return null
@@ -626,6 +638,7 @@ const handleResourceTaskNext = async () => {
       task_type: taskType,
       task_name: resourceTaskName.value,
       file_ids: uploadedResourceFiles.value.map(file => file.file_id),
+      api_key: customApiKey.value || undefined
     })
     snackbar.showMessage('任务创建成功', 'success')
     router.push('/history')

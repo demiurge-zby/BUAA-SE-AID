@@ -942,8 +942,11 @@ def if_publisher_can_access_dectection_task(request):
     task_id = request.query_params.get('task_id')
     if not task_id:
         return Response({'error': 'task_id is required'}, status=400)
-    access = DetectionTask.objects.filter(id=task_id, user=user).exists()
-    return Response({'access': access})
+    task = DetectionTask.objects.filter(id=task_id, user=user).first()
+    if task:
+        return Response({'access': True, 'task_type': task.task_type})
+    else:
+        return Response({'access': False})
 
 
 @api_view(['GET'])

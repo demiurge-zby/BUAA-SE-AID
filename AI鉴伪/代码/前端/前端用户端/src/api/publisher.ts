@@ -44,8 +44,13 @@ export default {
     task_type: 'paper' | 'review'
     task_name?: string
     file_ids: number[]
+    api_key?: string
   }) {
     return http.post('/resource-task/create/', data)
+  },
+
+  getPaperResults(task_id: string | number) {
+    return http.get(`/paper-results/${task_id}/`)
   },
 
   //获取某个任务的所有图片的AI检测结果

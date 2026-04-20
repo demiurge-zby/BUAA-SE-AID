@@ -13,6 +13,7 @@ declare module 'vue' {
     ForgotPassword: typeof import('./components/ForgotPassword.vue')['default']
     ImageSelectionStep: typeof import('./components/steps/ImageSelectionStep.vue')['default']
     Notification: typeof import('./components/Notification.vue')['default']
+    PaperDetectionStep: typeof import('./components/steps/PaperDetectionStep.vue')['default']
     ResourceDetectionDetailStep: typeof import('./components/steps/ResourceDetectionDetailStep.vue')['default']
     Result: typeof import('./components/result.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

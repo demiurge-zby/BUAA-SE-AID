@@ -310,6 +310,7 @@ class DetectionTask(models.Model):
     cmd_block_size = models.IntegerField(null=True, blank=True)
     urn_k = models.FloatField(null=True, blank=True)
     if_use_llm = models.BooleanField(default=False)  # 是否使用大语言模型
+    text_detection_results = models.JSONField(null=True, blank=True)  # 用于存储文本（论文）检测分段结果
 
     def __str__(self):
         return f"Task {self.id} - {self.user.username}"

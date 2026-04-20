@@ -39,8 +39,8 @@ def upload_file(request):
         return Response({'message': 'File size exceeds 100MB limit'}, status=400)
 
     allowed_image_ext = {'.png', '.jpg', '.jpeg', '.zip'}
-    allowed_paper_ext = {'.docx', '.pdf', '.zip'}
-    allowed_review_ext = {'.docx', '.pdf', '.txt', '.zip'}
+    allowed_paper_ext = {'.docx', '.pdf', '.zip', '.doc', '.txt'}
+    allowed_review_ext = {'.docx', '.pdf', '.txt', '.zip', '.doc'}
 
     linked_paper_file = None
     if detection_type == 'image':
@@ -59,7 +59,7 @@ def upload_file(request):
         else:
             if file_ext not in allowed_review_ext:
                 return Response({'message': 'Unsupported review file format'}, status=400)
-            if not linked_paper_file_id:
+            if not linked_paper_file_id or linked_paper_file_id == 'undefined':
                 return Response({'message': 'Review upload must include linked_paper_file_id'}, status=400)
 
             try:
@@ -110,6 +110,9 @@ def upload_file(request):
             extract_images_from_zip(file_management, uploaded_file)
         else:
             store_image(file_management, uploaded_file)
+    else:
+        # 如果是论文检测，不需要当成图片提取
+        pass
 
     # 在Log表中记录上传操作
     Log.objects.create(

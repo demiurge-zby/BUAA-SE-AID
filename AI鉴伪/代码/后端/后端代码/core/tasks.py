@@ -253,6 +253,122 @@ def generate_report_for_task(task_id):
     return generate_detection_task_report(task)
 
 
+import requests
+
+@shared_task
+def run_paper_detection(task_id, api_key=None):
+    """
+    全篇论文检测任务
+    读取上传的文件内容（目前主要支持 .txt 文件直接读取），分段调用 FastDetect API
+    并将分段概率结果存入 task.text_detection_results 中
+    """
+    task = DetectionTask.objects.get(id=task_id)
+    task.status = 'in_progress'
+    task.save(update_fields=['status'])
+
+    file_management = task.resource_files.first()
+    if not file_management:
+        task.status = 'completed'
+        task.save(update_fields=['status'])
+        return "No file found"
+
+    # 获取物理路径
+    file_path = os.path.join(settings.MEDIA_ROOT, file_management.stored_path)
+    if not os.path.exists(file_path):
+        task.status = 'completed'
+        task.save(update_fields=['status'])
+        return "File path does not exist"
+
+    # 尝试读取文本
+    text_content = ""
+    try:
+        ext = file_path.lower().split('.')[-1]
+        if ext == 'pdf':
+            import fitz
+            with fitz.open(file_path) as doc:
+                text_content = "".join([page.get_text() for page in doc])
+        elif ext == 'docx':
+            import docx
+            doc = docx.Document(file_path)
+            text_content = "\n".join([para.text for para in doc.paragraphs])
+        else:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text_content = f.read()
+    except Exception as e:
+        # fallback
+        try:
+            with open(file_path, 'r', encoding='gbk') as f:
+                text_content = f.read()
+        except:
+            text_content = f"无法读取文件内容或不支持的格式，请检查文件。({str(e)})"
+
+    # 分段处理 (按双换行分段，或者按字数分段，这里简单按换行或字数切分)
+    paragraphs = [p.strip() for p in text_content.split('\n') if p.strip()]
+    
+    # 进一步合并过短的段落，使其每段长度适中
+    segments = []
+    current_seg = ""
+    for p in paragraphs:
+        if len(current_seg) + len(p) < 500:
+            current_seg += p + " "
+        else:
+            if current_seg:
+                segments.append(current_seg.strip())
+            current_seg = p + " "
+    if current_seg:
+        segments.append(current_seg.strip())
+
+    if not segments:
+        segments = [text_content[:2000]] if text_content else ["无内容"]
+
+    API_ENDPOINT = "https://api.fastdetect.net/api/detect"
+    DEFAULT_API_KEY = "sk-szcr9duUjGSmp6UaDQlsJku1zBG3Rr1NSjFoGLsvFb5VWVos"
+    key_to_use = api_key if api_key else DEFAULT_API_KEY
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {key_to_use}",
+    }
+
+    results = []
+    for seg in segments:
+        data = {
+            "detector": "fast-detect(llama3-8b/llama3-8b-instruct)",
+            "text": seg
+        }
+        try:
+            response = requests.post(API_ENDPOINT, headers=headers, json=data, timeout=30)
+            res_json = response.json()
+            prob = res_json.get('data', {}).get('prob', 0)
+            details = res_json.get('data', {}).get('details', {})
+        except Exception as e:
+            prob = 0
+            details = str(e)
+            
+        results.append({
+            "text": seg,
+            "prob": prob,
+            "details": details
+        })
+
+    # 保存结果
+    task.text_detection_results = results
+    task.status = 'completed'
+    task.completion_time = timezone.now()
+    task.save(update_fields=['status', 'completion_time', 'text_detection_results'])
+
+    # 通知用户任务已完成
+    try:
+        send_task_completion_notification(task.user, task.id)
+    except Exception as e:
+        print(f"send notification error: {e}")
+
+    # TODO: 以后可生成PDF报告，这里目前省略
+    # generate_report_for_task(task.id)
+
+    return "Paper detection finished"
+
+
 import os
 # tasks.py
 @shared_task

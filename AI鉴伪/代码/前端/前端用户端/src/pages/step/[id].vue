@@ -28,6 +28,7 @@
 <script setup lang="ts">
 //注意鉴权！！！
 import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import type { RouteParams } from 'vue-router'
 import DetectionReviewStep from '@/components/steps/DetectionReviewStep.vue'

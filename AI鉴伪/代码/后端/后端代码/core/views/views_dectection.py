@@ -689,6 +689,19 @@ class CustomPagination(PageNumberPagination):
         })
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_paper_detection_results(request, task_id):
+    try:
+        task = DetectionTask.objects.get(id=task_id, user=request.user)
+        return Response({
+            "task_id": task.id,
+            "status": task.status,
+            "results": task.text_detection_results or []
+        })
+    except DetectionTask.DoesNotExist:
+        return Response({"message": "Detection task not found"}, status=404)
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_resource_task(request):
@@ -751,6 +764,11 @@ def create_resource_task(request):
         related_model='DetectionTask',
         related_id=detection_task.id,
     )
+
+    if task_type == 'paper':
+        from ..tasks import run_paper_detection
+        api_key = request.data.get('api_key', None)
+        run_paper_detection.delay(detection_task.id, api_key)
 
     return Response({
         'message': 'Resource task created successfully',

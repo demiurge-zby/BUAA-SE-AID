@@ -44,6 +44,7 @@ urlpatterns = [
     path('task-summary/', get_task_summary_lzy, name='get_task_summary_lzy'),
     path('get-task-summary/', get_task_summary, name='get_task_summary'),
     path('user-tasks/', get_user_tasks, name='get_user_tasks'),
+    path("paper-results/<int:task_id>/", get_paper_detection_results, name="paper-results"),
     path('organization/usage/', get_organization_usage_info, name='get_usage_info'),
     path('organization/recharge-uses/', recharge_uses, name='recharge_uses'),
     path('single-user-action-log/', SingleUserActionLogView.as_view(), name='single_user_action_log'),
